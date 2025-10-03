@@ -3,7 +3,7 @@ import fetch from "node-fetch";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SELF_URL = "https://andysobdata.vercel.app/leaderboard/top14";
+const SELF_URL = "https://andy-so-bdata.vercel.app/leaderboard/top14";
 const API_KEY = "TGAi37rWGCgsGBEkVpFmJ7mRhMBprIrG";
 
 let cachedData = [];
