@@ -49,9 +49,6 @@ async function fetchAndProcess(url) {
 
   const top10 = sorted.slice(0, 10);
 
-  // optional swap top 2 (preserving your earlier behavior)
-  if (top10.length >= 2) [top10[0], top10[1]] = [top10[1], top10[0]];
-
   return top10.map((entry) => {
     const w = Math.max(0, Math.round(parseFloat(entry.wagered_amount || 0)));
     return {
