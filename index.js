@@ -90,14 +90,13 @@ app.get("/leaderboard/top14", (req, res) => {
 app.get("/leaderboard/prev", async (req, res) => {
   try {
     const now = new Date();
-    // Previous period: reference date is 8th 23:59 of current period
-    const prevPeriodDate = new Date(Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      8, 23, 59, 59
-    ));
-    const { startStr, endStr } = leaderboardRangeUTC(prevPeriodDate);
-    const url = `https://services.rainbet.com/v1/external/affiliates?start_at=${startStr}&end_at=${endStr}&key=${API_KEY}`;
+    // 1. Get start date of current period
+    const { startStr } = leaderboardRangeUTC(now);
+    const startDate = new Date(startStr + "T00:00:00Z");
+    // 2. Reference date is 1 day before current period starts
+    const refDate = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
+    const { startStr: prevStart, endStr: prevEnd } = leaderboardRangeUTC(refDate);
+    const url = `https://services.rainbet.com/v1/external/affiliates?start_at=${prevStart}&end_at=${prevEnd}&key=${API_KEY}`;
 
     const processed = await fetchAndProcess(url);
     res.json(processed);
