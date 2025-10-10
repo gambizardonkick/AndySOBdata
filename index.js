@@ -22,10 +22,19 @@ function maskUsername(username) {
   return username.slice(0, 2) + "***" + username.slice(-2);
 }
 
-function monthRangeUTC(year, month0) {
-  // month0 is 0-indexed
-  const start = new Date(Date.UTC(year, month0, 1));      // 1st
-  const end = new Date(Date.UTC(year, month0 + 1, 0));    // last day
+// Custom leaderboard period calculation: 9th to next 8th (UTC)
+function leaderboardRangeUTC(referenceDate) {
+  let year = referenceDate.getUTCFullYear();
+  let month = referenceDate.getUTCMonth();
+
+  // If before the 9th, select previous month as period start
+  if (referenceDate.getUTCDate() < 9) {
+    month = (month - 1 + 12) % 12;
+    if (month === 11 && referenceDate.getUTCMonth() === 0) year--;
+  }
+
+  const start = new Date(Date.UTC(year, month, 9, 0, 0, 0)); // 9th 00:00:00
+  const end = new Date(Date.UTC(year, month + 1, 8, 23, 59, 59)); // 8th 23:59:59
   return {
     startStr: start.toISOString().slice(0, 10),
     endStr: end.toISOString().slice(0, 10),
@@ -34,7 +43,7 @@ function monthRangeUTC(year, month0) {
 
 function getDynamicApiUrl() {
   const now = new Date();
-  const { startStr, endStr } = monthRangeUTC(now.getUTCFullYear(), now.getUTCMonth());
+  const { startStr, endStr } = leaderboardRangeUTC(now);
   return `https://services.rainbet.com/v1/external/affiliates?start_at=${startStr}&end_at=${endStr}&key=${API_KEY}`;
 }
 
@@ -59,6 +68,7 @@ async function fetchAndProcess(url) {
   });
 }
 
+// Caches current leaderboard in memory
 async function fetchAndCacheData() {
   try {
     const url = getDynamicApiUrl();
@@ -71,19 +81,22 @@ async function fetchAndCacheData() {
 
 // --- Routes ---
 
-// Current month (1st → last day)
+// Current leaderboard period (9th to next 8th)
 app.get("/leaderboard/top14", (req, res) => {
   res.json(cachedData);
 });
 
-// Previous month (1st → last day)
+// Previous leaderboard period (prior 9th to 8th)
 app.get("/leaderboard/prev", async (req, res) => {
   try {
     const now = new Date();
-    const prevYear = now.getUTCMonth() === 0 ? now.getUTCFullYear() - 1 : now.getUTCFullYear();
-    const prevMonth0 = (now.getUTCMonth() + 11) % 12; // wrap Jan->Dec
-
-    const { startStr, endStr } = monthRangeUTC(prevYear, prevMonth0);
+    // Previous period: reference date is 8th 23:59 of current period
+    const prevPeriodDate = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      8, 23, 59, 59
+    ));
+    const { startStr, endStr } = leaderboardRangeUTC(prevPeriodDate);
     const url = `https://services.rainbet.com/v1/external/affiliates?start_at=${startStr}&end_at=${endStr}&key=${API_KEY}`;
 
     const processed = await fetchAndProcess(url);
