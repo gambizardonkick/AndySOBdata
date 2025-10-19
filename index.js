@@ -16,6 +16,12 @@ app.use((req, res, next) => {
   next();
 });
 
+// ✅ Cache-Control for Vercel CDN
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "max-age=0, s-maxage=60, stale-while-revalidate");
+  next();
+});
+
 function maskUsername(username) {
   if (!username) return "";
   if (username.length <= 4) return username;
@@ -27,17 +33,16 @@ function leaderboardRangeUTC(referenceDate) {
   let year = referenceDate.getUTCFullYear();
   let month = referenceDate.getUTCMonth();
 
-  // If before the 9th, select previous month as period start
   if (referenceDate.getUTCDate() < 9) {
     month = (month - 1 + 12) % 12;
-    if (month === 11 && referenceDate.getUTCMonth() === 0) year--;
+    if (referenceDate.getUTCMonth() === 0) year--;
   }
 
-  const start = new Date(Date.UTC(year, month, 9, 0, 0, 0)); // 9th 00:00:00
-  const end = new Date(Date.UTC(year, month + 1, 8, 23, 59, 59)); // 8th 23:59:59
+  const start = new Date(Date.UTC(year, month, 9, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month + 1, 8, 23, 59, 59));
   return {
     startStr: start.toISOString().slice(0, 10),
-    endStr: end.toISOString().slice(0, 10),
+    endStr: end.toISOString().slice(0, 10)
   };
 }
 
@@ -63,12 +68,12 @@ async function fetchAndProcess(url) {
     return {
       username: maskUsername(entry.username),
       wagered: w,
-      weightedWager: w,
+      weightedWager: w
     };
   });
 }
 
-// Caches current leaderboard in memory
+// ✅ Cache refetch
 async function fetchAndCacheData() {
   try {
     const url = getDynamicApiUrl();
@@ -81,23 +86,29 @@ async function fetchAndCacheData() {
 
 // --- Routes ---
 
-// Current leaderboard period (9th to next 8th)
-app.get("/leaderboard/top14", (req, res) => {
-  res.json(cachedData);
+// ✅ Lazy fetch ensures first-load works even after cold start
+app.get("/leaderboard/top14", async (req, res) => {
+  try {
+    if (!cachedData.length) {
+      console.log("[ℹ️] Cache empty, fetching fresh data...");
+      await fetchAndCacheData();
+    }
+    res.json(cachedData);
+  } catch (err) {
+    console.error("[❌] Error fetching leaderboard:", err.message);
+    res.status(500).json({ error: "Failed to load leaderboard data." });
+  }
 });
 
 // Previous leaderboard period (prior 9th to 8th)
 app.get("/leaderboard/prev", async (req, res) => {
   try {
     const now = new Date();
-    // 1. Get start date of current period
     const { startStr } = leaderboardRangeUTC(now);
     const startDate = new Date(startStr + "T00:00:00Z");
-    // 2. Reference date is 1 day before current period starts
     const refDate = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
     const { startStr: prevStart, endStr: prevEnd } = leaderboardRangeUTC(refDate);
     const url = `https://services.rainbet.com/v1/external/affiliates?start_at=${prevStart}&end_at=${prevEnd}&key=${API_KEY}`;
-
     const processed = await fetchAndProcess(url);
     res.json(processed);
   } catch (err) {
@@ -106,15 +117,15 @@ app.get("/leaderboard/prev", async (req, res) => {
   }
 });
 
-// --- Keep-alive ping (Render) ---
+// --- Keep-alive ping (Render/Vercel prevention of cold start) ---
 setInterval(() => {
   fetch(SELF_URL)
     .then(() => console.log(`[🔁] Self-pinged ${SELF_URL}`))
     .catch((err) => console.error("[⚠️] Self-ping failed:", err.message));
-}, 270000); // 4.5 minutes
+}, 120000); // every 2 min
 
 // --- Boot ---
-fetchAndCacheData();
+setTimeout(fetchAndCacheData, 1500); // small delay after startup
 setInterval(fetchAndCacheData, 5 * 60 * 1000); // refresh every 5 minutes
 
 app.listen(PORT, () => console.log(`🚀 Running on port ${PORT}`));
